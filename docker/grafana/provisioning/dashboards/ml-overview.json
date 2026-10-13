@@ -1,5 +1,5 @@
 {
-  "title": "Haloscope — ML Observability Overview",
+  "title": "Haloscope - End-to-end observability for ML and GenAI systems in production",
   "uid": "ml-obs-overview",
   "schemaVersion": 38,
   "refresh": "10s",

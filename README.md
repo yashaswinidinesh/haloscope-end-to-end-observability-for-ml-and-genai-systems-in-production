@@ -1,4 +1,4 @@
-# Haloscope
+# Haloscope - End-to-end observability for ML and GenAI systems in production
 
 End-to-end observability for ML and GenAI systems in production.
 
