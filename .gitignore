@@ -1,0 +1,24 @@
+# Binaries
+bin/
+*.exe
+
+# Go
+vendor/
+*.test
+
+# Environment
+.env
+.env.*
+!.env.example
+.venv/
+
+# macOS
+.DS_Store
+
+# Docker volumes (local dev)
+docker/data/
+
+# IDE
+.vscode/
+.idea/
+*.swp

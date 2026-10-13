@@ -1,0 +1,104 @@
+groups:
+  - name: ml_observability
+    rules:
+
+      # ── Latency SLO ──────────────────────────────────────────────────────────
+      - alert: ModelLatencyHigh
+        expr: histogram_quantile(0.95, rate(ml_inference_latency_ms_bucket[5m])) > 500
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "P95 latency > 500ms for {{ $labels.model_id }}"
+          description: "P95 = {{ $value | humanize }}ms. Check for upstream bottlenecks or model size regressions."
+
+      - alert: ModelLatencyCritical
+        expr: histogram_quantile(0.99, rate(ml_inference_latency_ms_bucket[5m])) > 2000
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "P99 latency > 2s — SLO breach for {{ $labels.model_id }}"
+
+      # ── Drift alerts ─────────────────────────────────────────────────────────
+      - alert: FeatureDriftDetected
+        expr: ml_feature_drift_psi > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Significant feature drift: {{ $labels.model_id }}/{{ $labels.feature_name }}"
+          description: "PSI={{ $value | humanize }}. PSI>0.2 indicates significant distribution shift. Investigate data pipeline."
+
+      - alert: PredictionDriftDetected
+        expr: ml_prediction_drift_psi > 0.25
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prediction distribution drift: {{ $labels.model_id }}"
+
+      # ── Accuracy / quality ───────────────────────────────────────────────────
+      - alert: ModelAccuracyDegraded
+        expr: ml_model_accuracy < 0.80
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Model accuracy < 80% for {{ $labels.model_id }}"
+          description: "Current accuracy: {{ $value | humanizePercentage }}. Consider rollback or retraining."
+
+      - alert: ModelAccuracyCritical
+        expr: ml_model_accuracy < 0.65
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical accuracy degradation: {{ $labels.model_id }}"
+
+      # ── LLM eval alerts ───────────────────────────────────────────────────────
+      - alert: HallucinationRateHigh
+        expr: llm_eval_hallucination_rate > 0.15
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Hallucination rate > 15% for {{ $labels.model_id }}"
+          description: "Current rate: {{ $value | humanizePercentage }}. Review recent prompt changes."
+
+      - alert: LLMQualityDegraded
+        expr: histogram_quantile(0.5, rate(llm_eval_score_bucket[10m])) < 0.6
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Median LLM quality score < 0.6 for {{ $labels.model_id }}"
+
+      # ── Errors ───────────────────────────────────────────────────────────────
+      - alert: InferenceErrorRateHigh
+        expr: |
+          rate(ml_inference_errors_total[5m]) /
+          rate(ml_inference_total[5m]) > 0.05
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Error rate > 5% for {{ $labels.model_id }}"
+
+      # ── Confidence ────────────────────────────────────────────────────────────
+      - alert: LowConfidenceSpike
+        expr: histogram_quantile(0.5, rate(ml_model_confidence_bucket[5m])) < 0.55
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Median confidence < 55% for {{ $labels.model_id }} — model may be uncertain"
+
+      # ── Kafka consumer lag ────────────────────────────────────────────────────
+      - alert: KafkaConsumerLagHigh
+        expr: kafka_consumer_lag > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka consumer lag > 1000 on {{ $labels.topic }}/partition {{ $labels.partition }}"

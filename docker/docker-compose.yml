@@ -1,0 +1,197 @@
+version: "3.9"
+
+# Haloscope — ML observability platform
+# Tools: Kafka, Redis, Prometheus, Grafana, OpenTelemetry Collector, Loki, Tempo
+#
+# Run: docker compose -f docker/docker-compose.yml up -d
+# Stop: docker compose -f docker/docker-compose.yml down -v
+
+networks:
+  obs-net:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+  tempo_data:
+
+services:
+
+  # ── Message broker ──────────────────────────────────────────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks: [obs-net]
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on: [zookeeper]
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    networks: [obs-net]
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    depends_on: [kafka]
+    networks: [obs-net]
+
+  # ── State store ─────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    networks: [obs-net]
+
+  # ── Metrics ─────────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    networks: [obs-net]
+
+  # ── Dashboards ──────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.3
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_FEATURE_TOGGLES_ENABLE: tempoApmTable
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on: [prometheus, loki, tempo]
+    networks: [obs-net]
+
+  # ── Logs ────────────────────────────────────────────────────────────────────
+  loki:
+    image: grafana/loki:3.0.0
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki_data:/loki
+    networks: [obs-net]
+
+  promtail:
+    image: grafana/promtail:3.0.0
+    volumes:
+      - /var/log:/var/log:ro
+      - ./promtail.yml:/etc/promtail/config.yml:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on: [loki]
+    networks: [obs-net]
+
+  # ── Distributed tracing ──────────────────────────────────────────────────────
+  tempo:
+    image: grafana/tempo:2.5.0
+    command: ["-config.file=/etc/tempo.yaml"]
+    ports:
+      - "3200:3200"   # Tempo HTTP
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    networks: [obs-net]
+
+  # ── OTel Collector ────────────────────────────────────────────────────────────
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.102.0
+    ports:
+      - "4319:4318"   # OTLP HTTP ingest from services
+      - "8888:8888"   # Collector self-metrics
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    depends_on: [tempo, prometheus]
+    networks: [obs-net]
+
+  # ── Platform services ─────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    ports:
+      - "8080:8080"
+      - "2114:2114"
+    environment:
+      KAFKA_BROKER: kafka:29092
+      REDIS_ADDR: redis:6379
+      API_PORT: "8080"
+      API_METRICS_PORT: "2114"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks: [obs-net]
+    restart: unless-stopped
+
+  ingester:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ingester
+    ports:
+      - "2112:2112"
+    environment:
+      KAFKA_BROKER: kafka:29092
+      KAFKA_TOPIC: ml-inference-events
+      METRICS_PORT: "2112"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks: [obs-net]
+    restart: unless-stopped
+
+  evaluator:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.evaluator
+    ports:
+      - "2113:2113"
+    environment:
+      REDIS_ADDR: redis:6379
+      EVAL_METRICS_PORT: "2113"
+      EVAL_QUEUE: eval:queue
+      EVAL_INTERVAL_SEC: "10"
+      # Set JUDGE_ENDPOINT + JUDGE_API_KEY for OpenAI, or leave for Ollama default
+      JUDGE_ENDPOINT: "${JUDGE_ENDPOINT:-http://host.docker.internal:11434/v1/chat/completions}"
+      JUDGE_MODEL: "${JUDGE_MODEL:-llama3.1:8b}"
+      JUDGE_API_KEY: "${JUDGE_API_KEY:-ollama}"
+    depends_on: [redis]
+    networks: [obs-net]
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

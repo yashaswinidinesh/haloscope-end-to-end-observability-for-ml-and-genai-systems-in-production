@@ -1,0 +1,96 @@
+{
+  "title": "Haloscope — ML Observability Overview",
+  "uid": "ml-obs-overview",
+  "schemaVersion": 38,
+  "refresh": "10s",
+  "time": {"from": "now-1h", "to": "now"},
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Total Inferences (last 5m)",
+      "gridPos": {"x": 0, "y": 0, "w": 4, "h": 4},
+      "targets": [{"expr": "sum(increase(ml_inference_total[5m]))", "legendFormat": "inferences"}],
+      "options": {"colorMode": "background", "graphMode": "area"}
+    },
+    {
+      "id": 2, "type": "stat", "title": "P95 Latency (ms)",
+      "gridPos": {"x": 4, "y": 0, "w": 4, "h": 4},
+      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(ml_inference_latency_ms_bucket[5m])) by (le))", "legendFormat": "p95"}],
+      "options": {"colorMode": "background"},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"color":"green","value":0},{"color":"yellow","value":300},{"color":"red","value":500}]}}}
+    },
+    {
+      "id": 3, "type": "stat", "title": "Max Feature PSI (drift)",
+      "gridPos": {"x": 8, "y": 0, "w": 4, "h": 4},
+      "targets": [{"expr": "max(ml_feature_drift_psi)", "legendFormat": "max PSI"}],
+      "options": {"colorMode": "background"},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"color":"green","value":0},{"color":"yellow","value":0.1},{"color":"red","value":0.2}]}}}
+    },
+    {
+      "id": 4, "type": "stat", "title": "Hallucination Rate",
+      "gridPos": {"x": 12, "y": 0, "w": 4, "h": 4},
+      "targets": [{"expr": "max(llm_eval_hallucination_rate)", "legendFormat": "hallucination"}],
+      "options": {"colorMode": "background"},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "thresholds": {"steps": [{"color":"green","value":0},{"color":"yellow","value":0.1},{"color":"red","value":0.2}]}}}
+    },
+    {
+      "id": 5, "type": "stat", "title": "Model Accuracy",
+      "gridPos": {"x": 16, "y": 0, "w": 4, "h": 4},
+      "targets": [{"expr": "min(ml_model_accuracy)", "legendFormat": "accuracy"}],
+      "options": {"colorMode": "background"},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "thresholds": {"steps": [{"color":"red","value":0},{"color":"yellow","value":0.75},{"color":"green","value":0.9}]}}}
+    },
+    {
+      "id": 6, "type": "stat", "title": "Eval Queue Depth",
+      "gridPos": {"x": 20, "y": 0, "w": 4, "h": 4},
+      "targets": [{"expr": "eval_queue_depth", "legendFormat": "queued"}],
+      "options": {"colorMode": "background"}
+    },
+    {
+      "id": 10, "type": "timeseries", "title": "Inference Latency Percentiles",
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum(rate(ml_inference_latency_ms_bucket[5m])) by (le, model_id))", "legendFormat": "p50 {{model_id}}"},
+        {"expr": "histogram_quantile(0.95, sum(rate(ml_inference_latency_ms_bucket[5m])) by (le, model_id))", "legendFormat": "p95 {{model_id}}"},
+        {"expr": "histogram_quantile(0.99, sum(rate(ml_inference_latency_ms_bucket[5m])) by (le, model_id))", "legendFormat": "p99 {{model_id}}"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "ms"}}
+    },
+    {
+      "id": 11, "type": "timeseries", "title": "Feature Drift PSI (> 0.2 = alert)",
+      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+      "targets": [{"expr": "ml_feature_drift_psi", "legendFormat": "{{model_id}}/{{feature_name}}"}],
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"color":"green","value":0},{"color":"yellow","value":0.1},{"color":"red","value":0.2}]}}}
+    },
+    {
+      "id": 20, "type": "timeseries", "title": "LLM Eval Scores",
+      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "histogram_quantile(0.5, sum(rate(llm_eval_score_bucket[10m])) by (le, model_id))", "legendFormat": "quality p50 {{model_id}}"},
+        {"expr": "histogram_quantile(0.5, sum(rate(llm_eval_grounding_bucket[10m])) by (le, model_id))", "legendFormat": "grounding p50 {{model_id}}"},
+        {"expr": "llm_eval_hallucination_rate", "legendFormat": "hallucination {{model_id}}"}
+      ]
+    },
+    {
+      "id": 21, "type": "timeseries", "title": "Inference Throughput & Error Rate",
+      "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "sum(rate(ml_inference_total[1m])) by (model_id)", "legendFormat": "rps {{model_id}}"},
+        {"expr": "sum(rate(ml_inference_errors_total[1m])) by (model_id)", "legendFormat": "errors/s {{model_id}}"}
+      ]
+    },
+    {
+      "id": 30, "type": "timeseries", "title": "Model Accuracy & Confidence",
+      "gridPos": {"x": 0, "y": 20, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "ml_model_accuracy", "legendFormat": "accuracy {{model_id}}"},
+        {"expr": "histogram_quantile(0.5, sum(rate(ml_model_confidence_bucket[5m])) by (le, model_id))", "legendFormat": "confidence p50 {{model_id}}"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "percentunit"}}
+    },
+    {
+      "id": 31, "type": "timeseries", "title": "Kafka Consumer Lag",
+      "gridPos": {"x": 12, "y": 20, "w": 12, "h": 8},
+      "targets": [{"expr": "kafka_consumer_lag", "legendFormat": "lag {{topic}}/{{partition}}"}]
+    }
+  ]
+}
