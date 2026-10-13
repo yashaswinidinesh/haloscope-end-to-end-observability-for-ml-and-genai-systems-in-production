@@ -125,8 +125,8 @@ ML Model / Service
 ### 1. Start the full stack
 
 ```bash
-git clone https://github.com/yashaswinidinesh/haloscope.git
-cd haloscope
+git clone https://github.com/yashaswinidinesh/haloscope-end-to-end-observability-for-ml-and-genai-systems-in-production.git
+cd haloscope-end-to-end-observability-for-ml-and-genai-systems-in-production
 
 # Build the Go services and start the full stack
 docker compose -f docker/docker-compose.yml up -d --build

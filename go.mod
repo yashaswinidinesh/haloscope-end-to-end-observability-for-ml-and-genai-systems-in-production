@@ -1,4 +1,4 @@
-module github.com/yashaswinidinesh/haloscope
+module github.com/yashaswinidinesh/haloscope-end-to-end-observability-for-ml-and-genai-systems-in-production
 
 go 1.22
 
